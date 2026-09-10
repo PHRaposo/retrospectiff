@@ -362,35 +362,35 @@
                            strip-byte-count width bits-per-sample
                            bytes-per-pixel compression)
   (file-position stream strip-offset)
-  (let ((compressed (read-bytes stream strip-byte-count)))
-    (let ((decoded (funcall (find-compression-decoder compression) compressed))
-	  (decoded-offset 0))
-      (let ((strip-length (/ (length decoded) width)))
-	(loop for i from start-row below (+ start-row strip-length)
-	   do
-	   (let ((rowoff (* i width bytes-per-pixel)))
-	     (loop for j below width
-		do
-		(let ((pixoff (+ rowoff (* bytes-per-pixel j))))
-		  (case bits-per-sample
-		    (8
-		     (setf (aref array pixoff)
-			   (aref decoded decoded-offset))
-		     (incf decoded-offset))
-		    (16
-		     (let ((data-offset pixoff))
-		       (ecase *byte-order*
-			 (:big-endian
-			  (setf (aref array data-offset)
-				(aref decoded decoded-offset)
-				(aref array (1+ data-offset))
-				(aref decoded (1+ decoded-offset))))
-			 (:little-endian
-			  (setf (aref array (1+ data-offset))
-				(aref decoded decoded-offset)
-				(aref array data-offset)
-				(aref decoded (1+ decoded-offset)))))
-		     (incf decoded-offset 2))))))))))))
+  (let* ((compressed (read-bytes stream strip-byte-count))
+         (decoded (funcall (find-compression-decoder compression)
+                           compressed))
+         (row-bytes (ceiling (* width bits-per-sample) 8))
+         (rows (floor (length decoded) row-bytes)))
+    (loop for i from start-row below (+ start-row rows)
+          for src-row = (* (- i start-row) row-bytes)
+          do (loop for j below width
+                   for pixoff = (* bytes-per-pixel (+ (* i width) j))
+                   do (ecase bits-per-sample
+                        (4
+                         (let ((byte (aref decoded (+ src-row (ash j -1)))))
+                           (setf (aref array pixoff)
+                                 (ldb (byte 4 (if (evenp j) 4 0)) byte))))
+                        (8
+                         (setf (aref array pixoff)
+                               (aref decoded (+ src-row j))))
+                        (16
+                         (let ((so (+ src-row (* 2 j))))
+                           (ecase *byte-order*
+                             (:big-endian
+                              (setf (aref array pixoff) (aref decoded so)
+                                    (aref array (1+ pixoff))
+                                    (aref decoded (1+ so))))
+                             (:little-endian
+                              (setf (aref array (1+ pixoff))
+                                    (aref decoded so)
+                                    (aref array pixoff)
+                                    (aref decoded (1+ so))))))))))))
 
 (defun read-indexed-image (stream ifd)
   (let ((image-width (get-ifd-value ifd +image-width-tag+))

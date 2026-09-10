@@ -107,3 +107,11 @@
         (is (equalp (tiff-image-data img)
                     (tiff-image-data input-img)))))))
 
+;; READ-INDEXED-STRIP must unpack packed palette indices one nibble at a time.
+(test tiff-read-4-bit-indexed-rgb-image
+  (let ((img (read-tiff-file (test-image "flower-palette-04.tif"))))
+    (is (= 16
+           (length
+            (remove-duplicates
+             (tiff-image-data img)))))))
+
